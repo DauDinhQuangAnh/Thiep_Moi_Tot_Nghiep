@@ -769,10 +769,12 @@
   <script src="xlsx.min.js"></script>
   <script src="html2canvas.min.js"></script>
   <script src="jszip.min.js"></script>
+  <script src="gifshot.min.js"></script>
   <script>
     if (typeof XLSX === 'undefined') document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
     if (typeof html2canvas === 'undefined') document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>');
     if (typeof JSZip === 'undefined') document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>');
+    if (typeof gifshot === 'undefined') document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"><\/script>');
   </script>
 </head>
 <body>
@@ -1202,23 +1204,121 @@
       return "downloaded";
     }
 
-    async function downloadCurrentCardGif() {
+        async function downloadCurrentCardGif() {
       try {
-        showToast("Đang chuẩn bị file GIF...", "🎬");
-        const byteCharacters = atob(CARD_GIF_B64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'image/gif' });
-
-        const currentGuest = guests[currentIndex] ? guests[currentIndex].name : "Quang_Anh";
+        const guestNameEl = document.getElementById('guestNameDisplay');
+        const currentGuest = (guestNameEl && guestNameEl.innerText.trim()) ? guestNameEl.innerText.trim() : (guests[currentIndex] ? guests[currentIndex].name : "Quang_Anh");
         const suggestedName = "Thiep_Moi_Tot_Nghiep_UIT_" + currentGuest.replace(/[^a-zA-Z0-9À-ỹ\s]/g, '').trim().replace(/\s+/g, '_') + ".gif";
+
+        let blob = null;
+
+        // If the current guest is default "Bạn Nguyễn Văn An", use the pre-rendered ultra-HD GIF
+        if (currentGuest === "Bạn Nguyễn Văn An" && typeof CARD_GIF_B64 !== 'undefined' && CARD_GIF_B64.length > 1000) {
+          showToast("Đang chuẩn bị file GIF...", "🎬");
+          const byteCharacters = atob(CARD_GIF_B64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          blob = new Blob([byteArray], { type: 'image/gif' });
+        } else {
+          // DYNAMIC GIF GENERATION for custom name or any other guest!
+          showToast(`Đang tạo ảnh động GIF cho "${currentGuest}"...`, "⏳");
+
+          if (typeof gifshot === 'undefined' || typeof html2canvas === 'undefined') {
+            alert("Đang nạp thư viện tạo GIF, vui lòng đợi vài giây và thử lại!");
+            return;
+          }
+
+          const card = document.querySelector('.cute-card');
+          const stickers = document.querySelector('.stickers-layer');
+
+          // Capture base card with the actual customized name
+          stickers.style.visibility = 'hidden';
+          const baseCanvas = await html2canvas(card, {
+            scale: 1.5,
+            useCORS: true,
+            backgroundColor: null,
+            logging: false
+          });
+          stickers.style.visibility = 'visible';
+
+          const stickerImgs = Array.from(document.querySelectorAll('.stickers-layer img'));
+          const cardRect = card.getBoundingClientRect();
+          const stickerData = stickerImgs.map(img => {
+            const r = img.getBoundingClientRect();
+            return {
+              img: img,
+              cx: (r.left - cardRect.left) + r.width / 2,
+              cy: (r.top - cardRect.top) + r.height / 2,
+              w: r.width,
+              h: r.height
+            };
+          });
+
+          const scale = baseCanvas.width / cardRect.width;
+          const W = baseCanvas.width;
+          const H = baseCanvas.height;
+
+          const frameCanvases = [];
+          const NUM_FRAMES = 14;
+
+          for (let f = 0; f < NUM_FRAMES; f++) {
+            const fc = document.createElement('canvas');
+            fc.width = W;
+            fc.height = H;
+            const ctx = fc.getContext('2d');
+            ctx.drawImage(baseCanvas, 0, 0);
+
+            const t = f / NUM_FRAMES;
+            stickerData.forEach((st, idx) => {
+              const phase = (t + idx * 0.15) * 2 * Math.PI;
+              const dy = Math.sin(phase) * 5 * scale;
+              const rot = Math.cos(phase) * 0.06;
+              const s = 1.0 + Math.sin(phase) * 0.025;
+
+              ctx.save();
+              ctx.translate(st.cx * scale, st.cy * scale + dy);
+              ctx.rotate(rot);
+              ctx.scale(s, s);
+              ctx.drawImage(st.img, -st.w * scale / 2, -st.h * scale / 2, st.w * scale, st.h * scale);
+              ctx.restore();
+            });
+
+            frameCanvases.push(fc.toDataURL('image/png'));
+          }
+
+          // Encode dynamic GIF
+          const gifDataUrl = await new Promise((resolve, reject) => {
+            gifshot.createGIF({
+              images: frameCanvases,
+              gifWidth: Math.round(W * 0.8),
+              gifHeight: Math.round(H * 0.8),
+              interval: 0.07,
+              numFrames: NUM_FRAMES,
+              sampleInterval: 8
+            }, function(obj) {
+              if (obj.error) {
+                reject(new Error(obj.errorMsg || "Lỗi tạo GIF"));
+              } else {
+                resolve(obj.image);
+              }
+            });
+          });
+
+          const byteCharacters = atob(gifDataUrl.split(',')[1]);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          blob = new Blob([byteArray], { type: 'image/gif' });
+        }
 
         const res = await saveFileWithPicker(blob, suggestedName, 'Ảnh động GIF (*.gif)', 'image/gif', '.gif');
         if (res === "saved" || res === "downloaded") {
-          showToast("Đã lưu thiệp chuyển động GIF thành công!", "🎉");
+          showToast(`Đã lưu thiệp GIF cho "${currentGuest}" thành công!`, "🎉");
         } else if (res === "cancelled") {
           showToast("Đã hủy lưu file GIF", "ℹ️");
         }
