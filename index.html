@@ -1436,15 +1436,7 @@
         await new Promise(r => setTimeout(r, 150));
 
         const zipBlob = await zip.generateAsync({ type: 'blob' });
-        const zipUrl = URL.createObjectURL(zipBlob);
-
-        const a = document.createElement('a');
-        a.href = zipUrl;
-        a.download = 'Thiep_Tot_Nghiep_UIT_QuangAnh_HangLoat.zip';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(zipUrl);
+        await saveFileWithPicker(zipBlob, 'Thiep_Tot_Nghiep_UIT_QuangAnh_HangLoat.zip', 'File nén ZIP (*.zip)', 'application/zip', '.zip');
 
         showToast(`Đã xuất thành công ZIP chứa ${guests.length} thiệp!`, "📦");
       } catch (err) {
